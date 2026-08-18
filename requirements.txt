@@ -1,0 +1,16 @@
+munch
+loralib
+datasets 
+transformers
+tensorboard
+# git+https://github.com/openai/CLIP.git
+accelerate
+matplotlib
+timm
+diffusers
+joblib
+peft
+safetensors
+huggingface
+qwen-vl-utils
+huggingface-hub
