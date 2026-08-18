@@ -86,10 +86,17 @@ def get_acc(model, data_loader, device="cuda"):
 
 def get_dataset_name_for_template(dataset):
     dataset_name = {
+        "imagenet_100": "",
+        "imagenet": "",
+        "std10": "",
         "pets": "pet ",
+        "fgvc_aircraft": "aircraft ",
+        "cars": "car ",
         "eurosat": "satellite ",
         "dtd": "texture ",
         "flowers102": "flower ",
+        "food101": "food ",
+        "sun397": "scene ",
         "caltech101": "",
     }[dataset]
     return dataset_name
