@@ -136,6 +136,7 @@ def main():
     scaler = torch.amp.GradScaler('cuda')
 
     step = 0
+    best_test_acc = 0.0
 
     for epoch in range(n_epochs):
         step = train_one_epoch(
@@ -156,6 +157,11 @@ def main():
             mu_eval = mu_eval.to(device)
             train_acc = get_acc(model, fewshot_train_loader, mu_eval, device)
             test_acc = get_acc(model, test_loader, mu_eval, device)
+
+        if test_acc > best_test_acc:
+            best_test_acc = test_acc
+            best_model_path = os.path.join(ckpt_path, "best_real_finetuned_model")
+            model.model.save_pretrained(best_model_path)
 
         writer.add_scalar("Epoch/Train_Accuracy", train_acc, global_step=epoch)
         writer.add_scalar("Epoch/Eval_Accuracy", test_acc, global_step=epoch)
