@@ -18,7 +18,7 @@ from utils import fix_random_seeds
 from models.qwen.src.models.qwen3_vl_embedding import Qwen3VLEmbedder
 from qwen_utils import get_image_embedding, get_acc
 from util_data import SUBSET_NAMES, TEMPLATES_SMALL
-from utils import get_dataset_name_for_template
+from utils import get_dataset_name_for_template, cosine_scheduler
 
 def get_infinite_iter(dataloader):
     while True:
@@ -55,6 +55,7 @@ def train_one_epoch(
     fewshot_train_loader,
     synth_iter,
     lamda,
+    lr_schedule,
     writer,
     device,
     dataset="dtd",
@@ -63,6 +64,11 @@ def train_one_epoch(
     model.model.train()
 
     for real_images, real_labels in fewshot_train_loader:
+
+        if step < len(lr_schedule):
+            for param_group in opt_h.param_groups:
+                param_group["lr"] = lr_schedule[step]
+
         step += 1
 
         synth_batch = next(synth_iter)
@@ -168,6 +174,16 @@ def main():
     opt_h = torch.optim.AdamW(trainable_params, lr=1e-4)
     scaler = torch.amp.GradScaler('cuda')
 
+    niter_per_ep = len(fewshot_train_loader)
+
+    lr_schedule = cosine_scheduler(
+        base_value=1e-4, 
+        final_value=1e-6, 
+        epochs=n_epochs, 
+        niter_per_ep=niter_per_ep, 
+        warmup_epochs=2, 
+        start_warmup_value=1e-6)
+
     step = 0
     best_test_acc = 0.0
     synth_iter = get_infinite_iter(synth_train_loader)
@@ -182,6 +198,7 @@ def main():
             fewshot_train_loader=fewshot_train_loader,
             synth_iter=synth_iter,
             lamda=lamda,
+            lr_schedule=lr_schedule,
             writer=writer, 
             device=device, 
             dataset=dataset,
