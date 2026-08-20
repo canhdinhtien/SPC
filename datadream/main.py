@@ -214,7 +214,7 @@ def main():
 
         if test_acc > best_test_acc:
             best_test_acc = test_acc
-            best_model_path = os.path.join(ckpt_path, "best_real_finetuned_model")
+            best_model_path = os.path.join(ckpt_path, "best_datadream_model")
             model.model.save_pretrained(best_model_path)
 
         writer.add_scalar("Epoch/Train_Accuracy", train_acc, global_step=epoch)
