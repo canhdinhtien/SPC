@@ -186,8 +186,8 @@ def train_one_epoch(
                 num_syn  = len(syn_indices)
 
                 if num_real > 0 and num_syn > 0:
-                    pred_real = real_imgs_embedding[real_indices]
-                    pred_syn  = synth_imgs_embedding[syn_indices] 
+                    pred_real = logits_real_all[real_indices]
+                    pred_syn  = logits_synth_all[syn_indices] 
 
                     diff = pred_real.unsqueeze(1) - pred_syn.unsqueeze(0) 
                     pairwise_mse = (diff ** 2).mean(dim=-1)              
