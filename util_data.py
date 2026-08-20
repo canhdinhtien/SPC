@@ -255,8 +255,8 @@ SUBSET_NAMES = {
         'Spitfire', 'Tornado', 'Tu-134', 'Tu-154', 'Yak-42'
     ],
     'eurosat': [
-        'AnnualCrop', 'Forest', 'HerbaceousVegetation', 'Highway', 'Industrial',
-        'Pasture', 'PermanentCrop', 'Residential', 'River', 'SeaLake'
+        'Annual Crop Land', 'Forest', 'Herbaceous Vegetation Land', 'Highway or Road', 'a Industrial Building',
+        'Pasture Land', 'Permanent Crop Land', 'Residential Building', 'River', 'Sea or Lake'
     ],
     'cars': [
         'AM General Hummer SUV 2000', 'Acura RL Sedan 2012', 'Acura TL Sedan 2012', 'Acura TL Type-S 2008', 'Acura TSX Sedan 2012',
