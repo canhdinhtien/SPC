@@ -61,7 +61,7 @@ def extract_flattened_images(dataset):
         features.append(arr.flatten())
     return np.vstack(features)
 
-def cluster_training_datasets_with_faiss(real_dataset, synth_dataset, num_centroids=10, niter=20):
+def cluster_training_datasets_with_faiss(real_dataset, synth_dataset, num_centroids=10, niter=60):
     print("Clustering training datasets with FAISS...")
     
     real_data = extract_flattened_images(real_dataset)
@@ -131,10 +131,10 @@ def train_one_epoch(
     logit_scale,
     idx_to_region,
     num_centroids,
-    lam_real=0.8,
-    lam_synth=0.2,
+    lam_real=4,
+    lam_synth=1,
     lam_dis=0.1,
-    lam_rob=0.1,
+    lam_rob=1,
     g_factor=1.0,
 ):
     model.model.train()
@@ -187,22 +187,18 @@ def train_one_epoch(
 
                 if num_real > 0 and num_syn > 0:
                     pred_real = real_imgs_embedding[real_indices]
-                    pred_syn  = synth_imgs_embedding[syn_indices]
+                    pred_syn  = synth_imgs_embedding[syn_indices] 
 
-                    pairwise_mse = F.mse_loss(
-                        pred_real.unsqueeze(1),
-                        pred_syn.unsqueeze(0),
-                        reduction='none'
-                    ).mean(dim=-1)
+                    diff = pred_real.unsqueeze(1) - pred_syn.unsqueeze(0) 
+                    pairwise_mse = (diff ** 2).mean(dim=-1)              
+                    
                     total_discrepancy_loss += pairwise_mse.sum() / (g_factor * num_real)
 
                 if num_syn > 1 and num_real > 0:
                     pred_syn_region = synth_imgs_embedding[syn_indices]
-                    pairwise_mse_syn = F.mse_loss(
-                        pred_syn_region.unsqueeze(1),
-                        pred_syn_region.unsqueeze(0),
-                        reduction='none'
-                    ).mean(dim=-1)
+
+                    diff_syn = pred_syn_region.unsqueeze(1) - pred_syn_region.unsqueeze(0)
+                    pairwise_mse_syn = (diff_syn ** 2).mean(dim=-1)
                     
                     i_upper = torch.triu_indices(num_syn, num_syn, offset=1)
                     mse_upper = pairwise_mse_syn[i_upper[0], i_upper[1]]
