@@ -11,6 +11,9 @@ from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 from tqdm import tqdm
 import numpy as np
 
+import sys
+sys.path.append("SPC/LLaVA")
+
 from llava_processor import LlaVaProcessor
 from llava.conversation import conv_templates, SeparatorStyle
 from llava.model.builder import load_pretrained_model
@@ -80,6 +83,7 @@ def path_to_latents(p, vae, mixup):
 
 @torch.no_grad()
 def latents_to_pil(latents, vae):
+    # vae.to("cuda")
     latents = (1 / 0.18215) * latents
     with torch.no_grad():
         image = vae.decode(latents).sample
@@ -92,6 +96,7 @@ def latents_to_pil(latents, vae):
 
 @torch.no_grad()
 def text_enc(prompts, tokenizer, text_encoder, maxlen=None):
+    text_encoder.to("cuda")
     if maxlen is None:
         maxlen = tokenizer.model_max_length
     inp = tokenizer(
@@ -104,10 +109,25 @@ def text_enc(prompts, tokenizer, text_encoder, maxlen=None):
     return text_encoder(inp.input_ids.to("cuda"))[0].half()
 
 def load_llava(llava_model_path):
-    print("Loading LLAVA")
+    print("Loading LLAVA (4-bit mode with new Config)...")
+    from transformers import BitsAndBytesConfig
     disable_torch_init()
     model_name = get_model_name_from_path(llava_model_path)
-    (llava_tokenizer, llava_model, llava_image_processor, context_len) = load_pretrained_model(llava_model_path, None, model_name, False, False)
+
+    quant_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4"
+    )
+
+    """
+        Nếu GPU đủ mạnh có thể bỏ quantize
+    """
+    (llava_tokenizer, llava_model, llava_image_processor, context_len) = load_pretrained_model(
+        llava_model_path, None, model_name, False, False, quantization_config=quant_config
+    )
+    
     llava_processor = LlaVaProcessor(llava_tokenizer, llava_image_processor, llava_model.config.mm_use_im_start_end)
     print("Loaded LLAVA")
     return llava_tokenizer, llava_model, llava_image_processor, context_len, llava_processor
@@ -121,9 +141,14 @@ sd_models = {
 def load_stable_diffusion(model_name):
     print("Loading Stable Diffusion Pipeline")
     pipe = StableDiffusionPipeline.from_pretrained(
-        sd_models[model_name], torch_dtype=torch.float16, local_files_only=True
+        sd_models[model_name], torch_dtype=torch.float16, 
     )
     pipe = pipe.to("cuda")
+
+    if hasattr(pipe.text_encoder, "hf_device_map"):
+        from accelerate.hooks import remove_hook_from_module
+        remove_hook_from_module(pipe.text_encoder, recurse=True)
+
     scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     scheduler.set_timesteps(20)
     pipe.scheduler = scheduler
@@ -159,6 +184,7 @@ def caption_image(images_path, class_name, llava_tokenizer, llava_model, llava_p
 
 @torch.no_grad()
 def get_prototype(model, dataset):
+    model.model.to("cuda")
     class_names = SUBSET_NAMES[dataset]
     dataset_name = get_dataset_name_for_template(dataset)
     all_mus = []
@@ -176,7 +202,8 @@ def get_prototype(model, dataset):
         mu = class_embs.mean(dim=0)
         mu = F.normalize(mu, dim=-1)
         all_mus.append(mu)
-
+    model.model.to("cpu")
+    torch.cuda.empty_cache()
     return torch.stack(all_mus)
 
 def load_qwen_model(qwen_model_path):
@@ -245,10 +272,10 @@ def main():
     cfg_strength = 8
     images_per_class = 64
     n_samples = 16
-    real_data_dir = 16
+    real_data_dir = "/content/SPC/data"
     use_llava = True
-    llava_model_path = "llava"
-    sd_model = "sd2-community/stable-diffusion-2-1"
+    llava_model_path = "liuhaotian/llava-v1.5-7b"
+    sd_model = "stable_diffusion"
     output_dir = "synthetic_data"
     mixup = False
 
@@ -289,7 +316,7 @@ def main():
 
         while generated_this_class < images_per_class:
             cycles_spent_this_class += 1
-            
+            scheduler.set_timesteps(20)
             file_paths = random.choices(available_files, k=batch_size)
 
             latents = path_to_latents(file_paths, vae, mixup)
@@ -315,30 +342,46 @@ def main():
                 except:
                     prompts = [f"a photo of a {class_name}."] * batch_size
 
-            text_embed = torch.cat([text_enc([prompt], tokenizer, text_encoder) for prompt in prompts])
-            uncond = text_enc([""] * 1, tokenizer, text_encoder, text_embed.shape[1])
-            uncond = uncond.repeat(batch_size, 1, 1)
+            # text_embed = torch.cat([text_enc([prompt], tokenizer, text_encoder) for prompt in prompts])
+            # uncond = text_enc([""] * 1, tokenizer, text_encoder, text_embed.shape[1])
+            # uncond = uncond.repeat(batch_size, 1, 1)
+            # emb = torch.cat([uncond, text_embed])
+
+            text_embed = text_enc(prompts, tokenizer, text_encoder)
+            uncond = text_enc([""] * 1, tokenizer, text_encoder, text_embed.shape[1]).repeat(batch_size, 1, 1)
             emb = torch.cat([uncond, text_embed])
 
             latents = noised_latents
 
+            """
+                Nếu GPU đủ VRAM có thể load Unet trực tiếp vào GPU
+            """
+
+            unet.to("cuda")
             for i, ts in enumerate(tqdm(scheduler.timesteps[starting_step:], disable=True)):
                 inp = scheduler.scale_model_input(torch.cat([latents] * 2), ts)
                 with torch.no_grad(), torch.autocast("cuda"):
                     unconditional, conditional = unet(inp, ts, encoder_hidden_states=emb).sample.chunk(2)
                 predicted_sample = unconditional + cfg_strength * (conditional - unconditional)
                 latents = scheduler.step(predicted_sample, ts, latents).prev_sample
-
+            unet.to("cpu")
+            torch.cuda.empty_cache()
             final_imgs = latents_to_pil(latents, vae)
             final_imgs_highres = [img.resize((512, 512)) for img in final_imgs]
             
             final_imgs_qwen = [img.resize((256, 256)) for img in final_imgs]
 
             with torch.no_grad(), torch.amp.autocast("cuda"):
+                """
+                    Nếu GPU đủ VRAM có thể load QWEN trực tiếp vào GPU
+                """
+                qwen_model.model.to("cuda") 
                 image_features = get_image_embedding(qwen_model, final_imgs_qwen)
                 image_features = F.normalize(image_features, dim=-1)
+                qwen_model.model.to("cpu")
+                torch.cuda.empty_cache()
 
-            similarities = (image_features @ zeroshot_weights.T).softmax(dim=-1)
+            similarities = (image_features.to(zeroshot_weights.dtype) @ zeroshot_weights.T).softmax(dim=-1)
 
             for i in range(batch_size):
                 predicted_class = similarities[i].argmax().item()
