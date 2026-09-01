@@ -361,7 +361,7 @@ def main():
 
         model.model.eval()
         with torch.no_grad():
-            mu_eval = get_prototype(model, prompt_path)
+            mu_eval, _ = get_prototype(model, prompt_path)
             mu_eval = mu_eval.to(device)
             train_acc = get_acc(model, fewshot_train_loader, mu_eval, device)
             test_acc = get_acc(model, test_loader, mu_eval, device)
