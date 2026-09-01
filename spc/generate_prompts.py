@@ -161,13 +161,30 @@ def filter_pairwise_prompts(embedder, prompts_A, prompts_B, num_keep=30):
 def generate_initial_prompts(qwen_model, processor, class_name, target_num=30):
     instruction = f"""
 You are an expert in visual recognition.
-Generate exactly {target_num} distinct visual descriptions for the class "{class_name}".
-Focus on concrete visual features (shape, color, texture, parts, structure).
-Do not use generic wording, definitions, or non-visual technical specs.
 
-Output exactly {target_num} descriptions. Format strictly:
-1. ...
-2. ...
+Generate exactly {target_num} visual descriptions for the following class:
+{class_name}
+
+IMPORTANT:
+- Output the class exactly once.
+- Use the class name exactly as provided.
+- The class must have exactly {target_num} descriptions.
+
+Descriptions within the same class should be diverse and complementary,
+focusing on different observable visual characteristics.
+
+Descriptions should emphasize concrete visual features that distinguish this class from other visually similar classes.
+Use relevant attributes such as shape, structure, parts, proportions, color, patterns, texture, or spatial arrangement.
+
+Avoid definitions, non-visual information, generic wording, technical specifications, and repeated descriptions.
+
+Format strictly as a numbered list:
+
+Class: {class_name}
+1. [Insert the first visual description here]
+2. [Insert the second visual description here]
+3. [Insert the third visual description here]
+(continue this exact pattern sequentially up to {target_num})
 """
     content = [{"type": "text", "text": instruction}]
     text = processor.apply_chat_template([{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True)
@@ -190,29 +207,44 @@ def refine_prompts_by_lda_pair(qwen_model, processor, class_names, pre_prompts, 
     
     instruction = f"""
 You are refining prompts for a vision-language model.
+
 You will be given few-shot images and current prompts for two visually confusing classes.
 
 CLASS A: {name_A}
+
 Current prompts:
-{chr(10).join(f'{i+1}. {p}' for i, p in enumerate(prompts_A[:10]))}
+{chr(10).join(f'{i+1}. {p}' for i, p in enumerate(prompts_A))}
 
 CLASS B: {name_B}
+
 Current prompts:
-{chr(10).join(f'{i+1}. {p}' for i, p in enumerate(prompts_B[:10]))}
+{chr(10).join(f'{i+1}. {p}' for i, p in enumerate(prompts_B))}
 
-Task: Rewrite the prompts so that the two classes are more semantically separated. 
-Focus STRONGLY on subtle discriminative differences (shape, parts, textures) from the provided images.
-Avoid generic descriptions. 
+Task: Rewrite the prompts so that:
+- The two classes are more semantically separated (reduce overlap and ambiguity).
+- Each class remains diverse, capturing multiple visual modes from the few-shot images.
+- Prompts are grounded in visual evidence and reflect distinctive attributes of each class.
+- Avoid generic or shared descriptions that could apply to both classes.
+- If an attribute appears in both classes, refine it to emphasize subtle discriminative differences.
 
-Output exactly 30 refined prompts per class in English. Format strictly:
+Output exactly 30 refined prompts per class in English.
+Use the class names exactly as provided.
+Do not expand, rename, abbreviate, or modify any class name.
+Format strictly as follows:
+
 Class: {name_A}
-1. ...
-2. ...
+1. [Insert refined description 1 for {name_A} here]
+2. [Insert refined description 2 for {name_A} here]
+3. [Insert refined description 3 for {name_A} here]
+(continue this pattern up to 30)
 
 Class: {name_B}
-1. ...
-2. ...
+1. [Insert refined description 1 for {name_B} here]
+2. [Insert refined description 2 for {name_B} here]
+3. [Insert refined description 3 for {name_B} here]
+(continue this pattern up to 30)
 """
+
     content = [{"type": "text", "text": instruction}]
     
     content.append({"type": "text", "text": f"Images of class: {name_A}"})
