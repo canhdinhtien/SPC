@@ -42,7 +42,7 @@ def pad_image(image):
         new_height = height
     new_im = Image.new("RGB", (new_width, new_height))
     new_im.paste(image, ((new_width - width) // 2, (new_height - height) // 2))
-    return new_im.resize((512, 512))
+    return new_im.resize((768, 768))
 
 def load_image(p):
     img = Image.open(p).convert("RGB")
